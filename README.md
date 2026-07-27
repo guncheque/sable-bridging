@@ -35,14 +35,13 @@ folder. Sable itself is optional.
 Being upfront about what this mod doesn't do yet, rather than let you
 find out the hard way:
 
-- **The outline box now attempts to render on Sable sub-levels too**
-  (moving and rotating with the contraption, via the sub-level's own
-  pose matrix), but this is the single least-tested piece of the whole
-  mod — pure world-rendering math I have no way to visually verify
-  without an actual client run. If the box appears in the wrong place
-  or orientation specifically on a sub-level, that's the first thing to
-  report back. Placement itself and the crosshair icon are unaffected
-  either way, since they don't depend on this.
+- **Sub-level outline is the least battle-tested part of the mod.** It
+  follows the contraption's position and rotation through the sub-level's
+  pose matrix, and it's held up in testing so far, but it's newer and
+  more fragile than everything else here. If the box ever looks off
+  (wrong spot, wrong angle) specifically while riding a sub-level, that's
+  the first place to look. Placement and the crosshair icon don't depend
+  on this, so they're unaffected either way.
 - **The toggle keybind now syncs to the server** (a small custom network
   payload sends your preference over whenever you toggle it), so it
   correctly affects real placement on a remote dedicated server, not
