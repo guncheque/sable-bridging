@@ -1,0 +1,139 @@
+plugins {
+    id 'java-library'
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.gradle.userdev' version '7.0.170'
+}
+tasks.named('wrapper', Wrapper).configure {
+    distributionType = Wrapper.DistributionType.BIN
+}
+version = mod_version
+group = mod_group_id
+repositories {
+    mavenLocal()
+    // Real published mod jars, resolved automatically -- no manual
+    // downloading or libs/ folder needed. Restricted via exclusiveContent
+    // so this repo is ONLY ever consulted for maven.modrinth:* coordinates,
+    // never as a general fallback for other dependencies.
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter { includeGroup "maven.modrinth" }
+    }
+    // Sable Companion's own maven -- verified directly against the real
+    // sable-companion repo/README this session (not guessed).
+    exclusiveContent {
+        forRepository {
+            maven { url = "https://maven.ryanhcode.dev/releases" }
+        }
+        filter { includeGroup("dev.ryanhcode.sable-companion") }
+    }
+}
+base {
+    archivesName = mod_id
+}
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+        modSource project.sourceSets.main
+    }
+    client {
+        systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+    }
+    server {
+        systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+        argument '--nogui'
+    }
+    gameTestServer {
+        systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+    }
+    data {
+        arguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+    }
+}
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+}
+dependencies {
+    implementation "net.neoforged:neoforge:${neo_version}"
+
+    // Sable -- NOT a compile dependency, since this mod never imports
+    // dev.ryanhcode.sable.* directly (only sable-companion's own API,
+    // which has zero compile-time coupling to Sable). Kept as localRuntime
+    // only, so it's present for dev-environment testing of the optional
+    // Sable-aware code path, without forcing it onto the classpath for
+    // everyone building this mod as a plain reach-around bridging mod.
+    localRuntime "maven.modrinth:T9PomCSv:1L6XJqnY"   // Sable 2.0.3
+
+    // NOTE: Create / Create Aeronautics / Curios were dropped from here.
+    // They were carried over from sable-creative-dim's dependency list
+    // without being actually needed -- this mod's own code never imports
+    // any of their classes, so they were just unused compile surface.
+    // If in-game testing on an actual Aeronautics ship needs them present
+    // in the dev run, add them back as localRuntime only (not compileOnly).
+
+    // Sable Companion -- a lightweight library, not a standalone mod, so it
+    // gets JiJ'd (jar-in-jar embedded) directly into this mod's own jar
+    // instead of requiring the end user to install it separately.
+    //
+    // NOTE: the artifact ID includes the Minecraft version suffix
+    // (sable-companion-common-1.21.1), NOT plain sable-companion-common.
+    // The README's copy-paste Gradle snippet omits this suffix -- but the
+    // README's own version badge URL, and DeepWiki's independent read of
+    // the source, both confirm the real published artifact is versioned
+    // this way (same pattern Sable itself uses for its own artifacts).
+    // The unversioned name returns a 404 on maven-metadata.xml.
+    jarJar(api("dev.ryanhcode.sable-companion:sable-companion-common-${minecraft_version}:[${sable_companion_version},)")) {
+        version {
+            prefer(sable_companion_version)
+        }
+    }
+}
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            url "file://${project.projectDir}/repo"
+        }
+    }
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = true
+    }
+}

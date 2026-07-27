@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# NeoGradle run directories
+run/
+runs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+out/
+bin/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
