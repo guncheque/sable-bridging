@@ -32,9 +32,6 @@ folder. Sable itself is optional.
 
 ## Known Limitations
 
-Being upfront about what this mod doesn't do yet, rather than let you
-find out the hard way:
-
 - **Sub-level outline is the least battle-tested part of the mod.** It
   follows the contraption's position and rotation through the sub-level's
   pose matrix, and it's held up in testing so far, but it's newer and
@@ -42,25 +39,19 @@ find out the hard way:
   (wrong spot, wrong angle) specifically while riding a sub-level, that's
   the first place to look. Placement and the crosshair icon don't depend
   on this, so they're unaffected either way.
-- **The toggle keybind now syncs to the server** (a small custom network
-  payload sends your preference over whenever you toggle it), so it
-  correctly affects real placement on a remote dedicated server, not
-  just your own local crosshair/outline display. One piece of this is
-  lower-confidence than the rest of the mod: retrieving the sending
-  player from the server-side payload handler (`IPayloadContext.player()`)
-  is the standard, documented approach, but I wasn't able to confirm the
-  literal method signature against a primary source — if multiplayer
-  sync doesn't work, that's the first place to check.
+- **Toggle keybind syncs to the server** over a small custom network
+  payload, so it actually affects placement on a dedicated server and not
+  just your local display. Works in testing; if multiplayer sync ever
+  misbehaves, the payload handler's player lookup is the likely suspect.
 - **Non-slab, non-full-block shapes (stairs, etc.) get a full-block
-  outline approximation.** Placement itself works fine for these
-  (ordinary vanilla placement logic handles the shape); only the preview
-  outline doesn't shrink to match.
-- **No vertical slab-combining** (building a new slab against an
-  existing half-slab to form a double slab in one placement). Ordinary
-  separate placement still works.
+  outline approximation.** Placement itself is fine — vanilla handles the
+  actual shape — the preview box just doesn't shrink to match.
+- **No vertical slab-combining** (stacking a new slab onto an existing
+  half-slab to form a double in one placement). Regular separate
+  placement still works fine.
 - Like the original Bridging Mod this one's inspired by: reach-around
-  placement gives a real gameplay advantage, so it's best suited to
-  singleplayer or servers where everyone's on board with using it.
+  placement is a real gameplay advantage, so it's best suited to
+  singleplayer or servers where everyone's fine with it being in use.
 
 ## Credits
 

@@ -42,6 +42,16 @@ public final class BridgingTargetCache {
     @Nullable
     private static SubLevelAccess cachedSubLevel = null;
 
+    // TEMPORARY DIAGNOSTIC, added to track down a specific reported bug:
+    // hasDirectBlockInReach not suppressing the outline even when a block
+    // was reported directly in the player's sightline at 3-4 blocks (well
+    // within the 4.5-block default reach). Prints the key decision values
+    // to the action bar (client-side only, not chat spam) whenever a
+    // gap-fill target is active, throttled to twice a second. Meant to be
+    // removed once the mismatch is actually understood -- this is not a
+    // permanent feature.
+    private static int debugTickCounter = 0;
+
     private BridgingTargetCache() {}
 
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -61,6 +71,24 @@ public final class BridgingTargetCache {
 
         cachedSubLevel = BridgingPlacement.getPlayerSubLevel(player);
         cached = BridgingPlacement.raycastForBridging(player, BridgingConfig.REACH_DISTANCE.get());
+
+        if (cached != null && cached.isGapFill()) {
+            debugTickCounter++;
+            if (debugTickCounter % 10 == 0) {
+                double dist = player.getEyePosition().distanceTo(cached.hit().getLocation());
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "[BridgingDebug] hasDirectBlockInReach=" + cached.hasDirectBlockInReach()
+                                        + " gapFillHitPos=" + cached.hit().getBlockPos()
+                                        + " placementPos=" + cached.placementPos()
+                                        + " hitDist=" + String.format("%.2f", dist)
+                        ),
+                        true
+                );
+            }
+        } else {
+            debugTickCounter = 0;
+        }
     }
 
     /**

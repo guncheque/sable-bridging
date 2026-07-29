@@ -111,6 +111,23 @@ public final class BridgingHighlightRenderer {
             return;
         }
 
+        // Requested polish fix: suppress the outline whenever a normal
+        // block exists anywhere along the player's reach, even though the
+        // gap-fill candidate itself is still valid. Found via real
+        // confusion: the outline promised a placement "in front" (the
+        // bridged gap position), but the block sometimes landed on a
+        // different, reachable block instead -- plausibly because
+        // vanilla's own separate pre-click targeting check (gating
+        // whether our interaction handler's event fires at all) can
+        // disagree with this mod's own raycast in ways not independently
+        // verified here. Rather than chase the exact mechanism, playing
+        // it safe and hiding the box in any ambiguous case avoids ever
+        // showing a promise that might not hold. Gap-fill PLACEMENT
+        // itself is untouched -- this only ever suppresses the preview.
+        if (target.hasDirectBlockInReach()) {
+            return;
+        }
+
         // Use the shared per-tick cache here too, not an independent
         // per-frame lookup -- see BridgingTargetCache's doc comment for
         // why (found on this same review pass: this was the one place

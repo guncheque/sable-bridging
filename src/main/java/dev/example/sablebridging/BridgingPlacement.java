@@ -6,10 +6,13 @@ import dev.ryanhcode.sable.companion.math.Pose3dc;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.context.BlockPlaceContext;
+import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
@@ -101,22 +104,47 @@ public final class BridgingPlacement {
      *                      (solid neighbor + outward face). Consumers that need
      *                      to know WHERE a block will land (e.g. the outline
      *                      renderer) should use this instead of trying to
-     *                      derive it from hit themselves.
+     *                      derive it from hit themselves. When holding a slab,
+     *                      this uses vanilla's own CONTEXT-AWARE replaceability
+     *                      check rather than the plain one, since that's the
+     *                      only way to correctly predict a double-slab combine
+     *                      against an existing half-slab -- see the doc comment
+     *                      at the gap-fill branch of findPlacementTarget.
      * @param indicatorFace the face to use for crosshair-icon selection —
      *                      always the true geometric placement direction, even
      *                      when applySlabAssist has overridden hit's own
      *                      direction to steer vanilla's slab logic. Consumers
      *                      picking a UI icon should use this, not hit.getDirection().
      * @param slabType      BOTTOM or TOP if this placement will result in a
-     *                      half-slab (known deterministically for the
-     *                      vertical case, decided by applySlabAssist for the
-     *                      horizontal case), null otherwise (not a slab, or
-     *                      not a gap-fill placement at all). Lets the outline
-     *                      renderer draw a half-height box instead of a full
-     *                      one when a slab is actually what's landing there.
+     *                      standalone half-slab, null if it's not a slab
+     *                      placement at all, OR if it IS a slab placement but
+     *                      one that will combine into a full double slab
+     *                      against an existing half-slab -- in that case the
+     *                      outline should be a full box, same as any other
+     *                      full-block placement, which is exactly what null
+     *                      already means to the outline renderer.
+     * @param hasDirectBlockInReach true if a normal vanilla raycast along
+     *                      this exact line of sight finds SOME block within
+     *                      full reach distance, regardless of whether it's
+     *                      nearer or farther than the gap-fill candidate
+     *                      itself. Requested after real user testing showed
+     *                      the outline promising a "bridged" placement in
+     *                      front, while the block actually landed on a
+     *                      different, reachable block behind/near it instead
+     *                      -- plausibly because vanilla's own separate
+     *                      pre-click targeting check (which gates whether
+     *                      RightClickItem even fires at all) can disagree
+     *                      with this mod's own doVanillaClip in ways not
+     *                      independently verified here. Rather than guess at
+     *                      the exact internal mechanism, this flag lets
+     *                      consumers just play it safe: the outline renderer
+     *                      uses it to suppress the box entirely whenever
+     *                      ANY reachable block exists along the ray, even
+     *                      though gap-fill PLACEMENT itself is untouched and
+     *                      still works exactly as before either way.
      */
     public record Target(BlockHitResult hit, boolean isGapFill, BlockPos placementPos, Direction indicatorFace,
-                          @Nullable SlabType slabType) {}
+                          @Nullable SlabType slabType, boolean hasDirectBlockInReach) {}
 
     /**
      * @return the sub-level the player is currently riding, or null if the
@@ -244,6 +272,13 @@ public final class BridgingPlacement {
     private static Target findPlacementTarget(Level level, Vec3 from, Vec3 to, Player player, double entityBoundFraction) {
         BlockHitResult vanillaHit = doVanillaClip(level, from, to, player);
 
+        // Any block along the FULL reach ray, independent of the bounding
+        // logic below (which only cares about the NEARER of a block/entity
+        // hit as a search limit). Requested specifically to suppress the
+        // outline whenever a reachable block exists anywhere on the sight
+        // line -- see the Target record's own doc comment for why.
+        boolean hasDirectBlockInReach = vanillaHit.getType() == HitResult.Type.BLOCK;
+
         // Bound the search to whichever of the block hit or the entity
         // fraction (computed in raycastForBridging, always in real global
         // space -- see that method's doc comment) is nearer. The entity
@@ -282,14 +317,57 @@ public final class BridgingPlacement {
             SlabAssistResult slabResult = applySlabAssist(gapFillHit, player, from, to);
             BlockHitResult finalHit = slabResult.hit();
 
-            BlockPos placementPos = computePlacementPos(level, finalHit);
-            return new Target(finalHit, true, placementPos, indicatorFace, slabResult.slabType());
+            // REAL BUG, found via user testing: the outline could show a
+            // gap-fill target one block away from an existing half-slab,
+            // while the actual placement landed AT that slab instead,
+            // combining into a double slab -- because computePlacementPos
+            // decides using the plain, context-independent canBeReplaced(),
+            // but vanilla's real placement (via BlockPlaceContext) uses the
+            // CONTEXT-AWARE overload, which is where SlabBlock's own
+            // combine-or-not decision actually lives. The two checks agree
+            // almost everywhere except exactly this case.
+            //
+            // Fixed by asking vanilla's own context-aware check directly,
+            // rather than reimplementing its combine logic ourselves --
+            // this is prediction only, not a new placement feature (actual
+            // combining already works today; it's vanilla's own code doing
+            // it, same as it always has). Deliberately scoped to only the
+            // slab-holding case, to avoid changing placementPos behavior
+            // for every other item type based on an unverified assumption
+            // that the context-aware check is safe everywhere.
+            InteractionHand slabHand = isSlabItem(player.getMainHandItem()) ? InteractionHand.MAIN_HAND
+                    : isSlabItem(player.getOffhandItem()) ? InteractionHand.OFF_HAND
+                    : null;
+
+            BlockPos placementPos;
+            SlabType outlineSlabType = slabResult.slabType();
+
+            if (slabHand != null) {
+                BlockPlaceContext context = new BlockPlaceContext(new UseOnContext(player, slabHand, finalHit));
+                boolean replaceable = level.getBlockState(finalHit.getBlockPos()).canBeReplaced(context);
+                placementPos = replaceable
+                        ? finalHit.getBlockPos()
+                        : finalHit.getBlockPos().relative(finalHit.getDirection());
+
+                if (replaceable && isSlabCombineTarget(level, finalHit)) {
+                    // Landing directly on an existing (non-double) slab
+                    // that vanilla says is replaceable in this context
+                    // means it's about to combine into a double slab --
+                    // the outline should be a full box, not a half one,
+                    // since that's what the block will actually look like.
+                    outlineSlabType = null;
+                }
+            } else {
+                placementPos = computePlacementPos(level, finalHit);
+            }
+
+            return new Target(finalHit, true, placementPos, indicatorFace, outlineSlabType, hasDirectBlockInReach);
         }
 
         BlockPos placementPos = vanillaHit.getType() == HitResult.Type.BLOCK
                 ? computePlacementPos(level, vanillaHit)
                 : vanillaHit.getBlockPos(); // meaningless for a MISS; never read by callers
-        return new Target(vanillaHit, false, placementPos, vanillaHit.getDirection(), null);
+        return new Target(vanillaHit, false, placementPos, vanillaHit.getDirection(), null, hasDirectBlockInReach);
     }
 
     /**
@@ -309,6 +387,20 @@ public final class BridgingPlacement {
         return level.getBlockState(hit.getBlockPos()).canBeReplaced()
                 ? hit.getBlockPos()
                 : hit.getBlockPos().relative(hit.getDirection());
+    }
+
+    /**
+     * @return true if the block already at hit.getBlockPos() is a genuine
+     *         (non-double) slab -- used alongside a context-aware
+     *         canBeReplaced() check to distinguish "landing here combines
+     *         into a double slab" from "landing here because it's just
+     *         ordinary air/replaceable terrain," which needs a different
+     *         outline shape (full box vs. half box) even though both cases
+     *         resolve to the same placementPos.
+     */
+    private static boolean isSlabCombineTarget(Level level, BlockHitResult hit) {
+        BlockState existing = level.getBlockState(hit.getBlockPos());
+        return existing.getBlock() instanceof SlabBlock && existing.getValue(SlabBlock.TYPE) != SlabType.DOUBLE;
     }
 
     /**
@@ -473,6 +565,19 @@ public final class BridgingPlacement {
                 // one here just means "not a valid gap-fill spot" — skip it.
                 continue;
             }
+            if (!state.getFluidState().isEmpty()) {
+                // REAL REGRESSION FOUND VIA USER TESTING: water is
+                // canBeReplaced()==true (that's why you can drop a block
+                // straight into it normally), so without this check, every
+                // single water-filled position along the ray counts as a
+                // legitimate gap-fill target -- meaning underwater, this
+                // search finds a "gap" almost everywhere at once, instead
+                // of only where there's genuinely open air. Vanilla's own
+                // ordinary reach already handles placing directly into
+                // water within normal range; the assist doesn't need to
+                // (and clearly shouldn't) extend that further.
+                continue;
+            }
 
             BlockHitResult candidate = findSupportedFace(level, pos, prioritizedSides);
             if (candidate != null) {
@@ -525,17 +630,25 @@ public final class BridgingPlacement {
      *         computeValidAssistSides), or null if none of those
      *         candidate sides has solid support.
      *
-     * Deliberately skips block-entity-bearing blocks (EntityBlock —
-     * Deployer, Filter, chests, furnaces, and anything else with a real
-     * GUI/machine behavior) as valid support. Found via a real compat
-     * bug: building against one of these "worked" as a gap-fill find,
-     * but silently stole the right-click from whatever meaningful
-     * interaction that block actually has (Create's Deployer/Filter
-     * losing their item-filter-setting click, specifically). Excluding
-     * them here is a more general fix than trying to defer via event
-     * priority alone, since it doesn't depend on assumptions about
-     * exactly which internal mechanism the other mod uses to handle its
-     * own right-click behavior.
+     * Skips blocks with a real GUI/menu (chests, furnaces, and similar
+     * machines) as valid support, checked via MenuProvider rather than
+     * the broader EntityBlock. REAL REGRESSION FOUND VIA USER TESTING:
+     * this used to check `instanceof EntityBlock` instead, which also
+     * has a block entity -- but so does anything with block-entity-held
+     * STATE even without a GUI, like Create's shafts/cogwheels/gearboxes
+     * (kinetic network data lives in their block entity), and those got
+     * silently excluded as support too, breaking bridging against them
+     * entirely. MenuProvider is the more precise signal for "has an
+     * actual interactive menu to preserve," matching the real reason
+     * for the original exclusion (Create's Deployer, specifically,
+     * losing its item-filter-setting click).
+     *
+     * NOT INDEPENDENTLY VERIFIED: whether Create's Filter block (the
+     * other original motivating case, alongside Deployer) implements
+     * MenuProvider or handles its right-click filter-setting some other
+     * way. If Filter's own interaction gets stolen again after this
+     * change, that's the thing to check next -- rather than guess at
+     * Create's internals without being able to inspect its source here.
      */
     @Nullable
     private static BlockHitResult findSupportedFace(Level level, BlockPos airPos, List<Direction> candidateSides) {
@@ -545,7 +658,8 @@ public final class BridgingPlacement {
             if (solidState.canBeReplaced()) {
                 continue;
             }
-            if (solidState.getBlock() instanceof EntityBlock) {
+            if (solidState.getBlock() instanceof EntityBlock
+                    && solidState.getMenuProvider(level, solidPos) != null) {
                 continue;
             }
 
