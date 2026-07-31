@@ -100,6 +100,13 @@ public final class BridgingHighlightRenderer {
         if (!BridgingKeybinds.enabled) {
             return;
         }
+        if (!BridgingConfig.SHOW_OUTLINE.get()) {
+            // Client-side preference only -- placement and the crosshair
+            // indicator are both untouched either way. Checked first since
+            // it's the cheapest possible early-out, ahead of even reading
+            // the target cache.
+            return;
+        }
 
         // Shared per-tick cache, not a fresh raycast every frame -- see
         // BridgingTargetCache's doc comment for why this matters (this

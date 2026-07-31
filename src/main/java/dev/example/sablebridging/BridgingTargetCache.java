@@ -42,6 +42,17 @@ public final class BridgingTargetCache {
     @Nullable
     private static SubLevelAccess cachedSubLevel = null;
 
+    // TEMPORARY DIAGNOSTIC, debug-instrumentation branch only. Extended
+    // from the earlier version to test a specific hypothesis for the
+    // hasDirectBlockInReach mismatch: that it's a coordinate-space bug,
+    // where the ray gets transformed into a Sable sub-level's LOCAL space
+    // even when the block actually being aimed at is ordinary global-space
+    // terrain. Now logs whether a sub-level was detected at all, the raw
+    // vanillaHit's own position/distance (in whichever space it was
+    // actually searched in), and the player's real global eye position for
+    // cross-referencing against F3 coordinates in-game.
+    private static int debugTickCounter = 0;
+
     private BridgingTargetCache() {}
 
     public static void onClientTick(ClientTickEvent.Post event) {
@@ -61,6 +72,33 @@ public final class BridgingTargetCache {
 
         cachedSubLevel = BridgingPlacement.getPlayerSubLevel(player);
         cached = BridgingPlacement.raycastForBridging(player, BridgingConfig.REACH_DISTANCE.get());
+
+        if (cached != null && cached.isGapFill()) {
+            debugTickCounter++;
+            if (debugTickCounter % 10 == 0) {
+                net.minecraft.world.phys.BlockHitResult rawHit = BridgingPlacement.debugLastVanillaHit;
+                String rawInfo;
+                if (rawHit == null) {
+                    rawInfo = "null";
+                } else {
+                    double rawDist = player.getEyePosition().distanceTo(rawHit.getLocation());
+                    rawInfo = rawHit.getType() + "@" + rawHit.getBlockPos()
+                            + " dist=" + String.format("%.2f", rawDist);
+                }
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "[BridgingDebug] hasDirectBlockInReach=" + cached.hasDirectBlockInReach()
+                                        + " onSubLevel=" + (cachedSubLevel != null)
+                                        + " rawVanillaHit=[" + rawInfo + "]"
+                                        + " gapFillHitPos=" + cached.hit().getBlockPos()
+                                        + " realEyePos=" + player.getEyePosition()
+                        ),
+                        true
+                );
+            }
+        } else {
+            debugTickCounter = 0;
+        }
     }
 
     /**

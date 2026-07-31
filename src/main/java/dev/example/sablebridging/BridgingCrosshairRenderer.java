@@ -49,6 +49,18 @@ public final class BridgingCrosshairRenderer {
             return;
         }
 
+        // Same suppression as BridgingHighlightRenderer's outline box, for
+        // the same reason: if a normal block exists anywhere within reach
+        // along the sightline (the kind of thing a mod like Jade would
+        // show info for), don't show any custom bridging UI at all --
+        // defer entirely to vanilla's own targeting in that case, rather
+        // than risk the indicator promising a bridged placement that
+        // doesn't match what actually happens. Placement itself is
+        // untouched either way; this only ever affects the crosshair icon.
+        if (target.hasDirectBlockInReach()) {
+            return;
+        }
+
         // Use indicatorFace, not hit.getDirection() -- applySlabAssist can
         // override the hit's own direction to UP/DOWN to steer vanilla's
         // slab half-selection, even for a placement that's geometrically
