@@ -263,22 +263,8 @@ public final class BridgingPlacement {
      * fair game the same way it does empty terrain.
      */
 
-    // TEMPORARY DIAGNOSTIC, part of the debug-instrumentation branch only
-    // -- never meant for main. Exposes the raw vanillaHit computed inside
-    // findPlacementTarget (type/position/distance), which the permanent
-    // Target record doesn't carry -- only the derived boolean does.
-    // Testing a specific hypothesis: that the still-unresolved
-    // hasDirectBlockInReach mismatch is a coordinate-space bug, where
-    // getPlayerSubLevel() returning non-null transforms the ray into a
-    // sub-level's LOCAL space even when the block actually being aimed at
-    // is ordinary global-space terrain -- causing the raycast to search
-    // entirely the wrong coordinate frame and miss a real, visible block.
-    @Nullable
-    static BlockHitResult debugLastVanillaHit = null;
-
     private static Target findPlacementTarget(Level level, Vec3 from, Vec3 to, Player player, double entityBoundFraction) {
         BlockHitResult vanillaHit = doVanillaClip(level, from, to, player);
-        debugLastVanillaHit = vanillaHit; // TEMPORARY DIAGNOSTIC
 
         // Bound the search to whichever of the block hit or the entity
         // fraction (computed in raycastForBridging, always in real global
