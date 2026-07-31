@@ -123,15 +123,20 @@ public final class BridgingHighlightRenderer {
         // gap-fill candidate itself is still valid. Found via real
         // confusion: the outline promised a placement "in front" (the
         // bridged gap position), but the block sometimes landed on a
-        // different, reachable block instead -- plausibly because
-        // vanilla's own separate pre-click targeting check (gating
-        // whether our interaction handler's event fires at all) can
-        // disagree with this mod's own raycast in ways not independently
-        // verified here. Rather than chase the exact mechanism, playing
-        // it safe and hiding the box in any ambiguous case avoids ever
-        // showing a promise that might not hold. Gap-fill PLACEMENT
-        // itself is untouched -- this only ever suppresses the preview.
-        if (target.hasDirectBlockInReach()) {
+        // different, reachable block instead.
+        //
+        // FIXED VERSION, after a real proven bug in the original one:
+        // this used to recompute its own raycast once per TICK from a
+        // non-interpolated eye position, which turned out to disagree
+        // with vanilla's own frame-accurate targeting for thin collision
+        // shapes specifically (confirmed via Jade showing info for a
+        // Create shaft that this mod's own check reported as a MISS).
+        // Reading Minecraft's own already-computed hitResult instead
+        // costs nothing extra (no redundant raycast at all) and is
+        // guaranteed to match whatever vanilla's real crosshair -- and
+        // Jade, which reads the same value -- actually shows.
+        HitResult mcHit = Minecraft.getInstance().hitResult;
+        if (mcHit != null && mcHit.getType() == HitResult.Type.BLOCK) {
             return;
         }
 

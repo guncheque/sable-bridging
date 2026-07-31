@@ -75,7 +75,7 @@ public final class BridgingTargetCache {
 
         if (cached != null && cached.isGapFill()) {
             debugTickCounter++;
-            if (debugTickCounter % 10 == 0) {
+            if (debugTickCounter % 30 == 0) {
                 net.minecraft.world.phys.BlockHitResult rawHit = BridgingPlacement.debugLastVanillaHit;
                 String rawInfo;
                 if (rawHit == null) {
@@ -85,15 +85,36 @@ public final class BridgingTargetCache {
                     rawInfo = rawHit.getType() + "@" + rawHit.getBlockPos()
                             + " dist=" + String.format("%.2f", rawDist);
                 }
+                // Chat instead of the action bar: the action bar is a
+                // single line with NO wrapping, so a message this long was
+                // getting clipped on both ends -- found via a real
+                // screenshot where the start and end were both cut off
+                // mid-field. Chat wraps and stays in the scrollable log,
+                // so split across two messages for readability rather than
+                // one long line.
+                // Now also shows Minecraft's own live hitResult alongside
+                // the mod's own raw vanillaHit -- this is exactly the
+                // comparison that confirmed the original bug (Jade found a
+                // Create shaft that this mod's own tick-based check
+                // reported as a MISS), so keeping both visible side by
+                // side is useful for spotting any future disagreement too.
+                net.minecraft.world.phys.HitResult mcHit = Minecraft.getInstance().hitResult;
+                String mcInfo = mcHit == null ? "null" : mcHit.getType() + "@"
+                        + (mcHit instanceof net.minecraft.world.phys.BlockHitResult blockHit ? blockHit.getBlockPos() : "n/a");
                 player.displayClientMessage(
                         net.minecraft.network.chat.Component.literal(
-                                "[BridgingDebug] hasDirectBlockInReach=" + cached.hasDirectBlockInReach()
-                                        + " onSubLevel=" + (cachedSubLevel != null)
+                                "[BridgingDebug] onSubLevel=" + (cachedSubLevel != null)
                                         + " rawVanillaHit=[" + rawInfo + "]"
-                                        + " gapFillHitPos=" + cached.hit().getBlockPos()
+                                        + " mcHitResult=[" + mcInfo + "]"
+                        ),
+                        false
+                );
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "  gapFillHitPos=" + cached.hit().getBlockPos()
                                         + " realEyePos=" + player.getEyePosition()
                         ),
-                        true
+                        false
                 );
             }
         } else {

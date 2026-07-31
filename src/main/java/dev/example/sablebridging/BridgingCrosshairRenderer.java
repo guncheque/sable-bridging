@@ -1,5 +1,6 @@
 package dev.example.sablebridging;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
@@ -53,11 +54,15 @@ public final class BridgingCrosshairRenderer {
         // the same reason: if a normal block exists anywhere within reach
         // along the sightline (the kind of thing a mod like Jade would
         // show info for), don't show any custom bridging UI at all --
-        // defer entirely to vanilla's own targeting in that case, rather
-        // than risk the indicator promising a bridged placement that
-        // doesn't match what actually happens. Placement itself is
-        // untouched either way; this only ever affects the crosshair icon.
-        if (target.hasDirectBlockInReach()) {
+        // defer entirely to vanilla's own targeting in that case.
+        //
+        // FIXED VERSION: reads Minecraft's own already-computed hitResult
+        // directly instead of a custom per-tick raycast, which turned out
+        // to disagree with it for thin collision shapes (see
+        // BridgingHighlightRenderer's matching comment for the full story
+        // -- a Create shaft that Jade found, but the old check missed).
+        HitResult mcHit = Minecraft.getInstance().hitResult;
+        if (mcHit != null && mcHit.getType() == HitResult.Type.BLOCK) {
             return;
         }
 
