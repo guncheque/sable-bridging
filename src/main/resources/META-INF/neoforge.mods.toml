@@ -8,6 +8,8 @@ version = "${mod_version}"
 displayName = "${mod_name}"
 authors = "${mod_authors}"
 logoFile = "icon.png"
+displayURL="https://github.com/guncheque/sable-bridging"
+issueTrackerURL="https://github.com/guncheque/sable-bridging/issues"
 description = '''${mod_description}'''
 
 [[dependencies.${mod_id}]]
