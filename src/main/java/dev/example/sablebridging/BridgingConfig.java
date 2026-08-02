@@ -30,6 +30,7 @@ public final class BridgingConfig {
 
     public static final ModConfigSpec CLIENT_SPEC;
     public static final ModConfigSpec.DoubleValue MIN_RENDER_DISTANCE;
+    public static final ModConfigSpec.BooleanValue SHOW_OUTLINE;
 
     static {
         ModConfigSpec.Builder serverBuilder = new ModConfigSpec.Builder();
@@ -56,6 +57,10 @@ public final class BridgingConfig {
         MIN_RENDER_DISTANCE = clientBuilder
                 .comment("Minimum distance (in blocks) from your eye before the outline box is drawn. Prevents the box rendering uncomfortably close to the camera in tight tunnels.")
                 .defineInRange("minRenderDistance", 1.5, 0.0, 8.0);
+
+        SHOW_OUTLINE = clientBuilder
+                .comment("Whether to draw the world-space outline box showing where a gap-fill placement will land. Purely visual -- the crosshair indicator and gap-fill placement itself are unaffected either way. Set to false if you'd rather bridge without the preview.")
+                .define("showOutline", true);
 
         clientBuilder.pop();
         CLIENT_SPEC = clientBuilder.build();

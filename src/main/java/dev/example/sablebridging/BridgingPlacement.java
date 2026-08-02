@@ -123,28 +123,22 @@ public final class BridgingPlacement {
      *                      outline should be a full box, same as any other
      *                      full-block placement, which is exactly what null
      *                      already means to the outline renderer.
-     * @param hasDirectBlockInReach true if a normal vanilla raycast along
-     *                      this exact line of sight finds SOME block within
-     *                      full reach distance, regardless of whether it's
-     *                      nearer or farther than the gap-fill candidate
-     *                      itself. Requested after real user testing showed
-     *                      the outline promising a "bridged" placement in
-     *                      front, while the block actually landed on a
-     *                      different, reachable block behind/near it instead
-     *                      -- plausibly because vanilla's own separate
-     *                      pre-click targeting check (which gates whether
-     *                      RightClickItem even fires at all) can disagree
-     *                      with this mod's own doVanillaClip in ways not
-     *                      independently verified here. Rather than guess at
-     *                      the exact internal mechanism, this flag lets
-     *                      consumers just play it safe: the outline renderer
-     *                      uses it to suppress the box entirely whenever
-     *                      ANY reachable block exists along the ray, even
-     *                      though gap-fill PLACEMENT itself is untouched and
-     *                      still works exactly as before either way.
+     *
+     * NOTE: this record used to also carry a hasDirectBlockInReach field,
+     * added to suppress the outline/crosshair whenever a normal block was
+     * within reach. REMOVED after being proven inaccurate via real
+     * testing: it was computed once per TICK from a non-interpolated eye
+     * position, which turned out to disagree with vanilla's own
+     * frame-accurate targeting (the same value Jade reads) specifically
+     * for thin targets like Create shafts -- close enough for a full
+     * block, not for a thin collision shape. The replacement reads
+     * Minecraft.getInstance().hitResult directly in the two render
+     * classes instead (client-only code, safe there but NOT safe here --
+     * this class also runs shared placement logic that has to work on a
+     * dedicated server, where the Minecraft class doesn't exist at all).
      */
     public record Target(BlockHitResult hit, boolean isGapFill, BlockPos placementPos, Direction indicatorFace,
-                          @Nullable SlabType slabType, boolean hasDirectBlockInReach) {}
+                          @Nullable SlabType slabType) {}
 
     /**
      * @return the sub-level the player is currently riding, or null if the
@@ -269,15 +263,22 @@ public final class BridgingPlacement {
      * fair game the same way it does empty terrain.
      */
 
+    // TEMPORARY DIAGNOSTIC, part of the debug-instrumentation branch only
+    // -- never meant for main. Exposes the raw vanillaHit computed inside
+    // findPlacementTarget (type/position/distance), which the permanent
+    // Target record doesn't carry -- only the derived boolean does.
+    // Testing a specific hypothesis: that the still-unresolved
+    // hasDirectBlockInReach mismatch is a coordinate-space bug, where
+    // getPlayerSubLevel() returning non-null transforms the ray into a
+    // sub-level's LOCAL space even when the block actually being aimed at
+    // is ordinary global-space terrain -- causing the raycast to search
+    // entirely the wrong coordinate frame and miss a real, visible block.
+    @Nullable
+    static BlockHitResult debugLastVanillaHit = null;
+
     private static Target findPlacementTarget(Level level, Vec3 from, Vec3 to, Player player, double entityBoundFraction) {
         BlockHitResult vanillaHit = doVanillaClip(level, from, to, player);
-
-        // Any block along the FULL reach ray, independent of the bounding
-        // logic below (which only cares about the NEARER of a block/entity
-        // hit as a search limit). Requested specifically to suppress the
-        // outline whenever a reachable block exists anywhere on the sight
-        // line -- see the Target record's own doc comment for why.
-        boolean hasDirectBlockInReach = vanillaHit.getType() == HitResult.Type.BLOCK;
+        debugLastVanillaHit = vanillaHit; // TEMPORARY DIAGNOSTIC
 
         // Bound the search to whichever of the block hit or the entity
         // fraction (computed in raycastForBridging, always in real global
@@ -361,13 +362,13 @@ public final class BridgingPlacement {
                 placementPos = computePlacementPos(level, finalHit);
             }
 
-            return new Target(finalHit, true, placementPos, indicatorFace, outlineSlabType, hasDirectBlockInReach);
+            return new Target(finalHit, true, placementPos, indicatorFace, outlineSlabType);
         }
 
         BlockPos placementPos = vanillaHit.getType() == HitResult.Type.BLOCK
                 ? computePlacementPos(level, vanillaHit)
                 : vanillaHit.getBlockPos(); // meaningless for a MISS; never read by callers
-        return new Target(vanillaHit, false, placementPos, vanillaHit.getDirection(), null, hasDirectBlockInReach);
+        return new Target(vanillaHit, false, placementPos, vanillaHit.getDirection(), null);
     }
 
     /**

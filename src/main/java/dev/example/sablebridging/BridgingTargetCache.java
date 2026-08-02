@@ -42,14 +42,15 @@ public final class BridgingTargetCache {
     @Nullable
     private static SubLevelAccess cachedSubLevel = null;
 
-    // TEMPORARY DIAGNOSTIC, added to track down a specific reported bug:
-    // hasDirectBlockInReach not suppressing the outline even when a block
-    // was reported directly in the player's sightline at 3-4 blocks (well
-    // within the 4.5-block default reach). Prints the key decision values
-    // to the action bar (client-side only, not chat spam) whenever a
-    // gap-fill target is active, throttled to twice a second. Meant to be
-    // removed once the mismatch is actually understood -- this is not a
-    // permanent feature.
+    // TEMPORARY DIAGNOSTIC, debug-instrumentation branch only. Extended
+    // from the earlier version to test a specific hypothesis for the
+    // hasDirectBlockInReach mismatch: that it's a coordinate-space bug,
+    // where the ray gets transformed into a Sable sub-level's LOCAL space
+    // even when the block actually being aimed at is ordinary global-space
+    // terrain. Now logs whether a sub-level was detected at all, the raw
+    // vanillaHit's own position/distance (in whichever space it was
+    // actually searched in), and the player's real global eye position for
+    // cross-referencing against F3 coordinates in-game.
     private static int debugTickCounter = 0;
 
     private BridgingTargetCache() {}
@@ -74,16 +75,46 @@ public final class BridgingTargetCache {
 
         if (cached != null && cached.isGapFill()) {
             debugTickCounter++;
-            if (debugTickCounter % 10 == 0) {
-                double dist = player.getEyePosition().distanceTo(cached.hit().getLocation());
+            if (debugTickCounter % 30 == 0) {
+                net.minecraft.world.phys.BlockHitResult rawHit = BridgingPlacement.debugLastVanillaHit;
+                String rawInfo;
+                if (rawHit == null) {
+                    rawInfo = "null";
+                } else {
+                    double rawDist = player.getEyePosition().distanceTo(rawHit.getLocation());
+                    rawInfo = rawHit.getType() + "@" + rawHit.getBlockPos()
+                            + " dist=" + String.format("%.2f", rawDist);
+                }
+                // Chat instead of the action bar: the action bar is a
+                // single line with NO wrapping, so a message this long was
+                // getting clipped on both ends -- found via a real
+                // screenshot where the start and end were both cut off
+                // mid-field. Chat wraps and stays in the scrollable log,
+                // so split across two messages for readability rather than
+                // one long line.
+                // Now also shows Minecraft's own live hitResult alongside
+                // the mod's own raw vanillaHit -- this is exactly the
+                // comparison that confirmed the original bug (Jade found a
+                // Create shaft that this mod's own tick-based check
+                // reported as a MISS), so keeping both visible side by
+                // side is useful for spotting any future disagreement too.
+                net.minecraft.world.phys.HitResult mcHit = Minecraft.getInstance().hitResult;
+                String mcInfo = mcHit == null ? "null" : mcHit.getType() + "@"
+                        + (mcHit instanceof net.minecraft.world.phys.BlockHitResult blockHit ? blockHit.getBlockPos() : "n/a");
                 player.displayClientMessage(
                         net.minecraft.network.chat.Component.literal(
-                                "[BridgingDebug] hasDirectBlockInReach=" + cached.hasDirectBlockInReach()
-                                        + " gapFillHitPos=" + cached.hit().getBlockPos()
-                                        + " placementPos=" + cached.placementPos()
-                                        + " hitDist=" + String.format("%.2f", dist)
+                                "[BridgingDebug] onSubLevel=" + (cachedSubLevel != null)
+                                        + " rawVanillaHit=[" + rawInfo + "]"
+                                        + " mcHitResult=[" + mcInfo + "]"
                         ),
-                        true
+                        false
+                );
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                                "  gapFillHitPos=" + cached.hit().getBlockPos()
+                                        + " realEyePos=" + player.getEyePosition()
+                        ),
+                        false
                 );
             }
         } else {
@@ -99,6 +130,45 @@ public final class BridgingTargetCache {
     @Nullable
     public static BridgingPlacement.Target get() {
         return cached;
+    }
+
+    /**
+     * Like get(), but recomputes fresh at full FRAME rate specifically
+     * when the player is on a Sable sub-level, instead of reusing the
+     * once-per-tick cached value. For the ordinary (not on a sub-level)
+     * case, this is identical to get() -- same cheap tick-rate cache,
+     * unchanged.
+     *
+     * WHY THIS EXISTS: found via real testing on a continuously-rotating
+     * platform. The outline's actual RENDER POSITION already
+     * re-transforms into world space every frame using the sub-level's
+     * live pose (see BridgingHighlightRenderer), so that part was always
+     * smooth. But WHICH block is even the correct gap-fill target can
+     * itself change continuously while the sub-level rotates underneath
+     * a fixed look direction -- purely because "correct target" is a
+     * function of the player's LOCAL-space aim, which keeps changing
+     * even if the player's real head doesn't move at all. That decision
+     * only being re-evaluated once per tick (20/sec) made the outline
+     * visibly hop between candidate blocks in discrete jumps instead of
+     * sliding, on anything continuously moving -- reported as stutter.
+     *
+     * Deliberately scoped to ONLY the on-a-sub-level case: normal ground
+     * bridging (the vast majority of play time) keeps the original
+     * once-per-tick cache completely untouched. The once-per-tick
+     * caching exists specifically because of a REAL prior lag bug from
+     * raycasting every frame near sub-levels (see this class's own top
+     * doc comment) -- this reintroduces that same per-frame cost, but
+     * only for exactly the situation that actually needs the extra
+     * accuracy, not everywhere. Worth re-verifying there's no
+     * regression of that original lag bug specifically near sub-levels
+     * after this change.
+     */
+    @Nullable
+    public static BridgingPlacement.Target getForRender(Player player) {
+        if (cachedSubLevel == null) {
+            return cached;
+        }
+        return BridgingPlacement.raycastForBridging(player, BridgingConfig.REACH_DISTANCE.get());
     }
 
     /**

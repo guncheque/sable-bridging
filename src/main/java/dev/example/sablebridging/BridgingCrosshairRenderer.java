@@ -1,6 +1,8 @@
 package dev.example.sablebridging;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
@@ -34,11 +36,15 @@ public final class BridgingCrosshairRenderer {
             return;
         }
 
-        // Shared per-tick cache, not a fresh raycast every frame -- see
-        // BridgingTargetCache's doc comment for why this matters (this
-        // used to be a real, confirmed source of noticeable lag near
-        // Sable sub-levels).
-        BridgingPlacement.Target target = BridgingTargetCache.get();
+        // Shared per-tick cache for the common case, not a fresh raycast
+        // every frame -- see BridgingTargetCache's doc comment for why
+        // this matters (this used to be a real, confirmed source of
+        // noticeable lag near Sable sub-levels). getForRender() upgrades
+        // to a fresh per-frame recompute specifically while on a
+        // sub-level, matching the same fix applied to
+        // BridgingHighlightRenderer -- see getForRender's own doc comment.
+        Player player = Minecraft.getInstance().player;
+        BridgingPlacement.Target target = player != null ? BridgingTargetCache.getForRender(player) : null;
         if (target == null) {
             return;
         }
@@ -46,6 +52,22 @@ public final class BridgingCrosshairRenderer {
         // Only show our indicator for gap-fill targets -- an ordinary
         // direct-look hit already has vanilla's own crosshair for it.
         if (!target.isGapFill() || target.hit().getType() != HitResult.Type.BLOCK) {
+            return;
+        }
+
+        // Same suppression as BridgingHighlightRenderer's outline box, for
+        // the same reason: if a normal block exists anywhere within reach
+        // along the sightline (the kind of thing a mod like Jade would
+        // show info for), don't show any custom bridging UI at all --
+        // defer entirely to vanilla's own targeting in that case.
+        //
+        // FIXED VERSION: reads Minecraft's own already-computed hitResult
+        // directly instead of a custom per-tick raycast, which turned out
+        // to disagree with it for thin collision shapes (see
+        // BridgingHighlightRenderer's matching comment for the full story
+        // -- a Create shaft that Jade found, but the old check missed).
+        HitResult mcHit = Minecraft.getInstance().hitResult;
+        if (mcHit != null && mcHit.getType() == HitResult.Type.BLOCK) {
             return;
         }
 

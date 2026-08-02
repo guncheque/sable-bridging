@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -100,13 +101,25 @@ public final class BridgingHighlightRenderer {
         if (!BridgingKeybinds.enabled) {
             return;
         }
+        if (!BridgingConfig.SHOW_OUTLINE.get()) {
+            // Client-side preference only -- placement and the crosshair
+            // indicator are both untouched either way. Checked first since
+            // it's the cheapest possible early-out, ahead of even reading
+            // the target cache.
+            return;
+        }
 
-        // Shared per-tick cache, not a fresh raycast every frame -- see
-        // BridgingTargetCache's doc comment for why this matters (this
-        // used to be a real, confirmed source of noticeable lag near
-        // Sable sub-levels). A null cache already covers "no player" and
-        // "not holding a block item," so neither needs checking again here.
-        BridgingPlacement.Target target = BridgingTargetCache.get();
+        // Shared per-tick cache for the common case, not a fresh raycast
+        // every frame -- see BridgingTargetCache's doc comment for why
+        // this matters (this used to be a real, confirmed source of
+        // noticeable lag near Sable sub-levels). getForRender() upgrades
+        // to a fresh per-frame recompute specifically while on a
+        // sub-level, to fix a real stutter found via testing on a
+        // continuously-rotating platform -- see getForRender's own doc
+        // comment for the full reasoning. A null player here (theoretically
+        // possible during this event) just means no target either way.
+        Player player = Minecraft.getInstance().player;
+        BridgingPlacement.Target target = player != null ? BridgingTargetCache.getForRender(player) : null;
         if (target == null || !target.isGapFill() || target.hit().getType() != HitResult.Type.BLOCK) {
             return;
         }
@@ -116,15 +129,20 @@ public final class BridgingHighlightRenderer {
         // gap-fill candidate itself is still valid. Found via real
         // confusion: the outline promised a placement "in front" (the
         // bridged gap position), but the block sometimes landed on a
-        // different, reachable block instead -- plausibly because
-        // vanilla's own separate pre-click targeting check (gating
-        // whether our interaction handler's event fires at all) can
-        // disagree with this mod's own raycast in ways not independently
-        // verified here. Rather than chase the exact mechanism, playing
-        // it safe and hiding the box in any ambiguous case avoids ever
-        // showing a promise that might not hold. Gap-fill PLACEMENT
-        // itself is untouched -- this only ever suppresses the preview.
-        if (target.hasDirectBlockInReach()) {
+        // different, reachable block instead.
+        //
+        // FIXED VERSION, after a real proven bug in the original one:
+        // this used to recompute its own raycast once per TICK from a
+        // non-interpolated eye position, which turned out to disagree
+        // with vanilla's own frame-accurate targeting for thin collision
+        // shapes specifically (confirmed via Jade showing info for a
+        // Create shaft that this mod's own check reported as a MISS).
+        // Reading Minecraft's own already-computed hitResult instead
+        // costs nothing extra (no redundant raycast at all) and is
+        // guaranteed to match whatever vanilla's real crosshair -- and
+        // Jade, which reads the same value -- actually shows.
+        HitResult mcHit = Minecraft.getInstance().hitResult;
+        if (mcHit != null && mcHit.getType() == HitResult.Type.BLOCK) {
             return;
         }
 
