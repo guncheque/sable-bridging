@@ -2,6 +2,7 @@ package dev.example.sablebridging;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
@@ -35,11 +36,15 @@ public final class BridgingCrosshairRenderer {
             return;
         }
 
-        // Shared per-tick cache, not a fresh raycast every frame -- see
-        // BridgingTargetCache's doc comment for why this matters (this
-        // used to be a real, confirmed source of noticeable lag near
-        // Sable sub-levels).
-        BridgingPlacement.Target target = BridgingTargetCache.get();
+        // Shared per-tick cache for the common case, not a fresh raycast
+        // every frame -- see BridgingTargetCache's doc comment for why
+        // this matters (this used to be a real, confirmed source of
+        // noticeable lag near Sable sub-levels). getForRender() upgrades
+        // to a fresh per-frame recompute specifically while on a
+        // sub-level, matching the same fix applied to
+        // BridgingHighlightRenderer -- see getForRender's own doc comment.
+        Player player = Minecraft.getInstance().player;
+        BridgingPlacement.Target target = player != null ? BridgingTargetCache.getForRender(player) : null;
         if (target == null) {
             return;
         }

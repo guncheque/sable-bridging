@@ -74,6 +74,45 @@ public final class BridgingTargetCache {
     }
 
     /**
+     * Like get(), but recomputes fresh at full FRAME rate specifically
+     * when the player is on a Sable sub-level, instead of reusing the
+     * once-per-tick cached value. For the ordinary (not on a sub-level)
+     * case, this is identical to get() -- same cheap tick-rate cache,
+     * unchanged.
+     *
+     * WHY THIS EXISTS: found via real testing on a continuously-rotating
+     * platform. The outline's actual RENDER POSITION already
+     * re-transforms into world space every frame using the sub-level's
+     * live pose (see BridgingHighlightRenderer), so that part was always
+     * smooth. But WHICH block is even the correct gap-fill target can
+     * itself change continuously while the sub-level rotates underneath
+     * a fixed look direction -- purely because "correct target" is a
+     * function of the player's LOCAL-space aim, which keeps changing
+     * even if the player's real head doesn't move at all. That decision
+     * only being re-evaluated once per tick (20/sec) made the outline
+     * visibly hop between candidate blocks in discrete jumps instead of
+     * sliding, on anything continuously moving -- reported as stutter.
+     *
+     * Deliberately scoped to ONLY the on-a-sub-level case: normal ground
+     * bridging (the vast majority of play time) keeps the original
+     * once-per-tick cache completely untouched. The once-per-tick
+     * caching exists specifically because of a REAL prior lag bug from
+     * raycasting every frame near sub-levels (see this class's own top
+     * doc comment) -- this reintroduces that same per-frame cost, but
+     * only for exactly the situation that actually needs the extra
+     * accuracy, not everywhere. Worth re-verifying there's no
+     * regression of that original lag bug specifically near sub-levels
+     * after this change.
+     */
+    @Nullable
+    public static BridgingPlacement.Target getForRender(Player player) {
+        if (cachedSubLevel == null) {
+            return cached;
+        }
+        return BridgingPlacement.raycastForBridging(player, BridgingConfig.REACH_DISTANCE.get());
+    }
+
+    /**
      * @return the sub-level the player was riding as of the last tick
      *         this was computed, or null if not on one (or not
      *         applicable right now — same conditions as get()).

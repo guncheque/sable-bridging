@@ -2,6 +2,7 @@ package dev.example.sablebridging;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import dev.ryanhcode.sable.companion.ClientSubLevelAccess;
 import dev.ryanhcode.sable.companion.SubLevelAccess;
 import dev.ryanhcode.sable.companion.math.Pose3dc;
 import net.minecraft.client.Camera;
@@ -10,6 +11,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.properties.SlabType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
@@ -59,12 +61,19 @@ import org.joml.Quaternionf;
  * transformPosition, which does that math in double precision the whole
  * way through.
  *
- * Uses logicalPose() rather than the smoother renderPose(partialTick) —
- * that needs casting to ClientSubLevelAccess and extracting a float
- * partial-tick from DeltaTracker, neither of which were verified this
- * session. logicalPose() trades a small amount of visual smoothness
- * (potential slight per-tick jitter rather than perfectly smooth
- * interpolation) for not adding a second unverified API surface.
+ * RESOLVED, found via real testing (visible jitter on a continuously
+ * rotating platform) and confirmed against the actual sable-companion
+ * source this pass: this used to use logicalPose() instead of
+ * renderPose(partialTick), with a note that the latter needed
+ * verification first (casting to ClientSubLevelAccess, an unverified
+ * DeltaTracker call) and wasn't worth the extra unverified API surface
+ * at the time. logicalPose() turned out to be Sable's raw TICK-RATE
+ * physics state -- polling it more often doesn't smooth anything out,
+ * since the value itself only updates 20 times a second regardless.
+ * renderPose() (no-arg overload, confirmed to exist and to use the
+ * current frame's partial-tick automatically) is Sable's own
+ * already-interpolated pose meant specifically for this. See the
+ * pose-selection code below for the switch and its defensive fallback.
  *
  * Confidence note: Pose3dc.orientation() (returns Quaterniondc) was
  * re-verified directly against the real source this pass, not assumed
@@ -108,12 +117,17 @@ public final class BridgingHighlightRenderer {
             return;
         }
 
-        // Shared per-tick cache, not a fresh raycast every frame -- see
-        // BridgingTargetCache's doc comment for why this matters (this
-        // used to be a real, confirmed source of noticeable lag near
-        // Sable sub-levels). A null cache already covers "no player" and
-        // "not holding a block item," so neither needs checking again here.
-        BridgingPlacement.Target target = BridgingTargetCache.get();
+        // Shared per-tick cache for the common case, not a fresh raycast
+        // every frame -- see BridgingTargetCache's doc comment for why
+        // this matters (this used to be a real, confirmed source of
+        // noticeable lag near Sable sub-levels). getForRender() upgrades
+        // to a fresh per-frame recompute specifically while on a
+        // sub-level, to fix a real stutter found via testing on a
+        // continuously-rotating platform -- see getForRender's own doc
+        // comment for the full reasoning. A null player here (theoretically
+        // possible during this event) just means no target either way.
+        Player player = Minecraft.getInstance().player;
+        BridgingPlacement.Target target = player != null ? BridgingTargetCache.getForRender(player) : null;
         if (target == null || !target.isGapFill() || target.hit().getType() != HitResult.Type.BLOCK) {
             return;
         }
@@ -172,7 +186,32 @@ public final class BridgingHighlightRenderer {
                 (localBox.minY + localBox.maxY) / 2.0,
                 (localBox.minZ + localBox.maxZ) / 2.0
         );
-        Pose3dc pose = subLevel != null ? subLevel.logicalPose() : null;
+        Pose3dc pose;
+        if (subLevel instanceof ClientSubLevelAccess clientAccess) {
+            // VERIFIED FIX, real jitter root cause found via source
+            // inspection: logicalPose() is Sable's raw TICK-RATE physics
+            // state -- reading it more often (even every frame, as the
+            // getForRender() change above now does) doesn't help at all,
+            // since the underlying value itself only changes 20 times a
+            // second regardless of polling frequency. renderPose() is
+            // Sable's own already-interpolated pose specifically meant
+            // for rendering (confirms and replaces an earlier session's
+            // unverified note about this same method -- it exists exactly
+            // as anticipated, confirmed against the real sable-companion
+            // source this pass). No-arg overload uses the current frame's
+            // partial-tick automatically, sidestepping any need to fetch
+            // DeltaTracker ourselves.
+            pose = clientAccess.renderPose();
+        } else if (subLevel != null) {
+            // Defensive fallback only -- in practice every SubLevelAccess
+            // reaching this CLIENT-ONLY rendering code should already be a
+            // ClientSubLevelAccess. Falls back to the old tick-rate
+            // behavior rather than crashing if that assumption is ever
+            // wrong.
+            pose = subLevel.logicalPose();
+        } else {
+            pose = null;
+        }
         Vec3 renderCenter = pose != null ? pose.transformPosition(localCenter) : localCenter;
 
         if (camPos.distanceTo(renderCenter) < BridgingConfig.MIN_RENDER_DISTANCE.get()) {
