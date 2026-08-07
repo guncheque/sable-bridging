@@ -31,6 +31,9 @@ public final class BridgingConfig {
     public static final ModConfigSpec CLIENT_SPEC;
     public static final ModConfigSpec.DoubleValue MIN_RENDER_DISTANCE;
     public static final ModConfigSpec.BooleanValue SHOW_OUTLINE;
+    public static final ModConfigSpec.BooleanValue SHOW_CROSSHAIR_INDICATOR;
+    public static final ModConfigSpec.ConfigValue<String> OUTLINE_COLOR;
+    public static final ModConfigSpec.DoubleValue OUTLINE_OPACITY;
 
     static {
         ModConfigSpec.Builder serverBuilder = new ModConfigSpec.Builder();
@@ -61,6 +64,18 @@ public final class BridgingConfig {
         SHOW_OUTLINE = clientBuilder
                 .comment("Whether to draw the world-space outline box showing where a gap-fill placement will land. Purely visual -- the crosshair indicator and gap-fill placement itself are unaffected either way. Set to false if you'd rather bridge without the preview.")
                 .define("showOutline", true);
+
+        SHOW_CROSSHAIR_INDICATOR = clientBuilder
+                .comment("Whether to draw the reach-around indicator sprite over the crosshair when a gap-fill target is available. Independent of showOutline -- purely visual, gap-fill placement itself is unaffected either way.")
+                .define("showCrosshairIndicator", true);
+
+        OUTLINE_COLOR = clientBuilder
+                .comment("Color of the outline box, as a hex RGB string (e.g. \"#000000\" for black, \"#FFFFFF\" for white). Defaults to the same black vanilla uses for its own block-selection outline. Invalid values fall back to black at render time rather than crashing.")
+                .define("outlineColor", "#000000");
+
+        OUTLINE_OPACITY = clientBuilder
+                .comment("Opacity of the outline box, from 0.0 (fully invisible -- effectively the same as showOutline=false) to 1.0 (fully solid). Matches vanilla's own block-selection outline opacity by default.")
+                .defineInRange("outlineOpacity", 0.4, 0.0, 1.0);
 
         clientBuilder.pop();
         CLIENT_SPEC = clientBuilder.build();

@@ -221,6 +221,9 @@ public final class BridgingHighlightRenderer {
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
         VertexConsumer consumer = bufferSource.getBuffer(RenderType.lines());
 
+        float[] rgb = parseOutlineColor();
+        float alpha = (float) BridgingConfig.OUTLINE_OPACITY.get().doubleValue();
+
         poseStack.pushPose();
 
         if (pose != null) {
@@ -248,18 +251,47 @@ public final class BridgingHighlightRenderer {
             double halfZ = (localBox.maxZ - localBox.minZ) / 2.0;
             AABB centeredBox = new AABB(-halfX, -halfY, -halfZ, halfX, halfY, halfZ);
 
-            LevelRenderer.renderLineBox(poseStack, consumer, centeredBox, 0.0f, 0.0f, 0.0f, 0.4f);
+            LevelRenderer.renderLineBox(poseStack, consumer, centeredBox, rgb[0], rgb[1], rgb[2], alpha);
         } else {
             poseStack.translate(-camPos.x, -camPos.y, -camPos.z);
 
             // Same color/alpha vanilla uses for its own block-selection
-            // outline, so this reads as "a normal Minecraft outline"
-            // rather than something visually foreign.
-            LevelRenderer.renderLineBox(poseStack, consumer, localBox, 0.0f, 0.0f, 0.0f, 0.4f);
+            // outline BY DEFAULT, so this reads as "a normal Minecraft
+            // outline" rather than something visually foreign -- but now
+            // configurable via OUTLINE_COLOR/OUTLINE_OPACITY if a player
+            // wants something more subtle or a colorblind-friendly choice.
+            LevelRenderer.renderLineBox(poseStack, consumer, localBox, rgb[0], rgb[1], rgb[2], alpha);
         }
 
         poseStack.popPose();
         bufferSource.endBatch(RenderType.lines());
+    }
+
+    /**
+     * @return {r, g, b} as floats in [0,1], parsed from OUTLINE_COLOR's
+     *         hex string. Falls back to black (matching the previous
+     *         hardcoded default) on ANY parse failure -- a malformed
+     *         config value (typo, missing '#', wrong length) should
+     *         degrade gracefully to the old default, never crash
+     *         rendering. Re-parses on every call rather than caching,
+     *         since config values can change live via the in-game config
+     *         screen and this is cheap (a few character comparisons) next
+     *         to the actual line-box draw call it feeds into.
+     */
+    private static float[] parseOutlineColor() {
+        String hex = BridgingConfig.OUTLINE_COLOR.get();
+        try {
+            String cleaned = hex.startsWith("#") ? hex.substring(1) : hex;
+            if (cleaned.length() != 6) {
+                throw new NumberFormatException("expected 6 hex digits, got: " + cleaned);
+            }
+            int r = Integer.parseInt(cleaned.substring(0, 2), 16);
+            int g = Integer.parseInt(cleaned.substring(2, 4), 16);
+            int b = Integer.parseInt(cleaned.substring(4, 6), 16);
+            return new float[]{r / 255.0f, g / 255.0f, b / 255.0f};
+        } catch (Exception e) {
+            return new float[]{0.0f, 0.0f, 0.0f};
+        }
     }
 
     /**

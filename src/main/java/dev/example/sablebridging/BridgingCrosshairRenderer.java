@@ -35,6 +35,13 @@ public final class BridgingCrosshairRenderer {
         if (!BridgingKeybinds.enabled) {
             return;
         }
+        if (!BridgingConfig.SHOW_CROSSHAIR_INDICATOR.get()) {
+            // Independent of showOutline -- a player might want one
+            // visual piece without the other. Checked first since it's
+            // the cheapest possible early-out, same reasoning as
+            // BridgingHighlightRenderer's SHOW_OUTLINE check.
+            return;
+        }
 
         // Shared per-tick cache for the common case, not a fresh raycast
         // every frame -- see BridgingTargetCache's doc comment for why
