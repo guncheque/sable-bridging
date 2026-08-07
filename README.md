@@ -13,7 +13,11 @@ flight or motion) too.
 - Bedrock-style reach-around placement, on any of the 6 axes
 - A crosshair indicator shows when a gap-fill placement is available and
   which face it'll build against
-- A world-space outline box shows exactly where the block will land
+- A world-space outline box shows exactly where the block will land, with
+  configurable color and opacity — including for a colorblind-friendly
+  contrast, or just a more subtle preview if the default is too loud
+- The crosshair indicator and outline box can each be toggled off
+  independently, if you'd rather only use one (or neither)
 - Slabs placed into a gap correctly pick top or bottom half based on
   where you're looking, matching vanilla's own slab placement feel
 - A toggle keybind (unbound by default — set it in Controls) to turn
@@ -29,6 +33,21 @@ flight or motion) too.
 Requires NeoForge on Minecraft 1.21.1. Drop the `-all.jar` build (the one
 containing the embedded `sable-companion` library) into your `mods`
 folder. Sable itself is optional.
+
+## Config
+
+Reach distance, direction-similarity threshold, and slab snap strength are
+all tunable, along with a few purely visual settings:
+
+- `showOutline` / `showCrosshairIndicator` — turn either off independently
+- `outlineColor` — hex RGB, defaults to vanilla's own black selection-box
+  color
+- `outlineOpacity` — 0.0 to 1.0, defaults to 0.4 (matching vanilla)
+
+The color and opacity options exist specifically so the outline can be
+made colorblind-friendly, or just toned down if the default reads as too
+strong. Making settings like this available by default is a small thing,
+but it's a real priority for this project.
 
 ## Known Limitations
 
